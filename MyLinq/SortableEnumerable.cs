@@ -5,11 +5,17 @@ namespace MyLinq;
 public class SortableEnumerable<T> : IEnumerable<T>
 {
     private readonly IEnumerable<T> _elements;
-    private readonly LinkedList<Func<T, IComparable>> _sortSelectors = new();
+    private readonly LinkedList<ICompareSelector<T>> _sortSelectors = new();
 
     public SortableEnumerable(IEnumerable<T> elements)
     {
-        _elements = elements;
+        _elements = elements.ToList();
+    }
+
+    private SortableEnumerable(IEnumerable<T> elements, IEnumerable<ICompareSelector<T>> sortSelectors)
+    {
+        _elements = new List<T>(elements);
+        _sortSelectors = new LinkedList<ICompareSelector<T>>(sortSelectors);
     }
 
     public IEnumerator<T> GetEnumerator()
@@ -28,17 +34,16 @@ public class SortableEnumerable<T> : IEnumerable<T>
         return Materialize();
     }
     
-    public SortableEnumerable<T> MyThenBy(Func<T, IComparable> selector)
+    public SortableEnumerable<T> MyThenBy<TKey>(Func<T, TKey> selector) where TKey : IComparable<TKey>
     {
-        _sortSelectors.AddLast(selector);
-        return this;
+        _sortSelectors.AddLast(new CompareSelector<T,TKey>(selector));
+        return new SortableEnumerable<T>(_elements, _sortSelectors);
     }
 
-    public SortableEnumerable<T> MyOrderBy(Func<T, IComparable> selector)
+    public SortableEnumerable<T> MyOrderBy<TKey>(Func<T, TKey> selector) where TKey : IComparable<TKey>
     {
-        //предположение - OrderBy(A).OrderBy(B) = ThenBy(B).ThenBy(A)
-        _sortSelectors.AddFirst(selector);
-        return this;    
+        _sortSelectors.AddFirst(new CompareSelector<T, TKey>(selector));
+        return new SortableEnumerable<T>(_elements, _sortSelectors);
     }
 
     private List<T> Materialize()
@@ -49,10 +54,7 @@ public class SortableEnumerable<T> : IEnumerable<T>
         {
             foreach (var selector in _sortSelectors)
             {
-                var keyA = selector(a);
-                var keyB = selector(b);
-
-                var comparisonResult = keyA.CompareTo(keyB);
+                var comparisonResult = selector.Compare(a, b);
                 if (comparisonResult != 0)
                 {
                     return comparisonResult;
